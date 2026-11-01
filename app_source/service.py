@@ -152,7 +152,13 @@ def _dhan(body):
             return json.loads(urllib.request.urlopen(req, timeout=60).read())
         except urllib.error.HTTPError as e:
             if e.code in (401, 403):
-                raise DhanAuthError("Dhan says your access token is invalid or expired. Open Settings and paste a fresh one.")
+                try:
+                    detail = e.read().decode("utf-8", "replace")[:300]
+                except Exception:
+                    detail = ""
+                print(f"Dhan HTTP {e.code}: {detail}", flush=True)
+                raise DhanAuthError("Dhan says your access token is invalid or expired. Open Settings and paste a fresh one."
+                                    + (f" (Dhan: {detail})" if detail else ""))
             if e.code == 429 or e.code >= 500:
                 time.sleep(2 + 3 * attempt)
                 continue
