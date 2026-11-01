@@ -18,12 +18,27 @@ from model.kronos import calc_time_stamps, sample_from_logits  # noqa: E402
 COLS = ["open", "high", "low", "close", "volume", "amount"]
 
 
+INT8_FILE = "Kronos-base-int8.pt"
+
+
 def load(threads=6, model_dir=None):
     torch.set_num_threads(threads)
     d = model_dir or os.path.join(HERE, "models")
     tok = KronosTokenizer.from_pretrained(os.path.join(d, "Kronos-Tokenizer-base")).eval()
-    mdl = Kronos.from_pretrained(os.path.join(d, "Kronos-base")).eval()
+    q = os.path.join(d, INT8_FILE)
+    if os.environ.get("KRONOS_INT8") == "1" and os.path.exists(q):
+        # Low-memory hosting: Linear layers stored as 8-bit (built by quantize_model.py, ~4x smaller).
+        mdl = torch.load(q, weights_only=False).eval()
+    else:
+        mdl = Kronos.from_pretrained(os.path.join(d, "Kronos-base")).eval()
     return tok, mdl
+
+
+def quantize(model_dir):
+    """Save an 8-bit (dynamic int8 Linear) copy of Kronos-base next to the original weights."""
+    mdl = Kronos.from_pretrained(os.path.join(model_dir, "Kronos-base")).eval()
+    qm = torch.ao.quantization.quantize_dynamic(mdl, {torch.nn.Linear}, dtype=torch.qint8)
+    torch.save(qm, os.path.join(model_dir, INT8_FILE))
 
 
 def _infer(tok, mdl, x, x_stamp, y_stamp, max_context, pred_len, clip, T, top_k, top_p, n):
@@ -178,6 +193,10 @@ def sample_paths(tok, mdl, df, x_ts, y_ts, n_paths=50, T=1.0, top_k=0, top_p=0.9
     xs = calc_time_stamps(pd.Series(x_ts).reset_index(drop=True)).values.astype(np.float32)
     ys = calc_time_stamps(pd.Series(y_ts).reset_index(drop=True)).values.astype(np.float32)
     pred_len = len(ys)
-    z = (_infer_fast if fast else _infer)(tok, mdl, torch.from_numpy(xn[None]), torch.from_numpy(xs[None]),
-                                          torch.from_numpy(ys[None]), max_context, pred_len, clip, T, top_k, top_p, n_paths)
+    # KRONOS_CHUNK runs the paths a few at a time to cap memory (the key/value cache grows with the
+    # number of paths). Default: all at once, which keeps desktop results identical to before.
+    chunk = int(os.environ.get("KRONOS_CHUNK", "0") or 0) or n_paths
+    args = (torch.from_numpy(xn[None]), torch.from_numpy(xs[None]), torch.from_numpy(ys[None]), max_context, pred_len, clip, T, top_k, top_p)
+    infer = _infer_fast if fast else _infer
+    z = np.concatenate([infer(tok, mdl, *args, min(chunk, n_paths - i)) for i in range(0, n_paths, chunk)])
     return z[:, -pred_len:, :] * (std + 1e-5) + mean
