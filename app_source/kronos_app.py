@@ -131,8 +131,10 @@ def keys():
         return err("Enter both your Dhan client id and access token.", 400)
     try:
         S.check_keys(cid, tok)
-    except S.DhanAuthError:
-        return err("Dhan didn't accept these keys. Check the client id and paste a fresh access token.", 400)
+    except S.DhanAuthError as e:
+        detail = str(e).split("(Dhan: ", 1)[1].rstrip(")") if "(Dhan: " in str(e) else ""
+        return err("Dhan didn't accept these keys. Check the client id and paste a fresh access token."
+                   + (f" Dhan said: {detail}" if detail else ""), 400)
     except Exception as e:
         return err(f"Couldn't reach Dhan to check the keys: {str(e)[:150]}", 502)
     cfg["client_id"], cfg["access_token"] = cid, tok
