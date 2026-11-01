@@ -2,6 +2,7 @@
 # First run: accept the agreement, enter your own Dhan client id + access token (stored only on this
 # computer, sent only to api.dhan.co), download the Kronos model once. This software never places an
 # order. Educational tool, not investment advice.
+import hmac
 import json
 import os
 import sys
@@ -14,7 +15,12 @@ from flask import Flask, Response, jsonify, redirect, request, send_from_directo
 import service as S
 
 VERSION = "1.0.0"
-PORT = 8767
+PORT = int(os.environ.get("PORT", "8767"))
+HOST = os.environ.get("HOST", "127.0.0.1")
+# Hosted mode (e.g. Render): the app is on the public internet, so every page needs a password.
+APP_USER = os.environ.get("APP_USER", "naga")
+APP_PASSWORD = os.environ.get("APP_PASSWORD", "")
+HOSTED = HOST not in ("127.0.0.1", "localhost")
 ASSETS = os.path.join(S.BASE, "assets")
 CFG = os.path.join(S.HOME, "config.json")
 
@@ -24,6 +30,10 @@ if os.path.exists(CFG):
         cfg.update(json.load(open(CFG)))
     except ValueError:
         pass
+if not cfg["client_id"] and os.environ.get("DHAN_CLIENT_ID"):
+    cfg["client_id"] = os.environ["DHAN_CLIENT_ID"]
+if not cfg["access_token"] and os.environ.get("DHAN_ACCESS_TOKEN"):
+    cfg["access_token"] = os.environ["DHAN_ACCESS_TOKEN"]
 S.set_keys(cfg["client_id"], cfg["access_token"])
 
 
@@ -46,6 +56,23 @@ def ready():
 
 
 app = Flask(__name__)
+
+
+@app.route("/healthz")
+def healthz():
+    return "ok"
+
+
+@app.before_request
+def password_gate():
+    if not HOSTED or request.path == "/healthz":
+        return None
+    if not APP_PASSWORD:
+        return Response("Set the APP_PASSWORD environment variable to use this app.", status=503)
+    a = request.authorization
+    if a and hmac.compare_digest(a.username or "", APP_USER) and hmac.compare_digest(a.password or "", APP_PASSWORD):
+        return None
+    return Response("Password required", status=401, headers={"WWW-Authenticate": 'Basic realm="Kronos Forecast"'})
 
 
 def err(msg, code):
@@ -156,12 +183,16 @@ def forecast_one():
 
 
 def main():
+    if HOSTED:
+        print(f"Kronos Forecast {VERSION} (hosted) on {HOST}:{PORT}, data in {S.HOME}")
+        app.run(host=HOST, port=PORT, threaded=True)
+        return
     url = f"http://localhost:{PORT}"
     print(f"Kronos Forecast {VERSION} -> {url}   (close this window to stop)")
     print(f"Your settings and data live in: {S.HOME}")
     if "--no-browser" not in sys.argv:
         threading.Timer(1.2, lambda: webbrowser.open(url)).start()
-    app.run(host="127.0.0.1", port=PORT, threaded=True)
+    app.run(host=HOST, port=PORT, threaded=True)
 
 
 if __name__ == "__main__":

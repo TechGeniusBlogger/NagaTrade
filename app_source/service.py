@@ -23,6 +23,10 @@ BASE = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
 
 
 def _home():
+    if os.environ.get("KRONOS_HOME"):  # hosted (Docker / Render): one fixed folder
+        d = os.environ["KRONOS_HOME"]
+        os.makedirs(d, exist_ok=True)
+        return d
     if sys.platform == "win32":
         root = os.environ.get("APPDATA") or os.path.expanduser("~")
     elif sys.platform == "darwin":
