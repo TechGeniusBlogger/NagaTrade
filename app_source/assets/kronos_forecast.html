@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kronos Forecast</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<script src="/mentorship/d3.min.js"></script>
+<style>
+  /* Same TradingView-style terminal as the GARCH replay (garch_replay.html): same panels, same
+     navigation. What changes is what's on the chart: Kronos's 30 possible futures. */
+  :root{
+    --bg:#131722; --panel:#1c2030; --panel2:#20242f; --line:#2a2e39; --grid:#1e222c;
+    --ink:#d1d4dc; --muted:#787b86; --faint:#4a4e5a;
+    --up:#26a69a; --down:#ef5350;
+    --accent:#2962ff; --accent-t:#12213f;
+    --fc:#ff9800; --fc-t:rgba(255,152,0,.2); --fc-zone:rgba(255,152,0,.04); --fc-ink:#ffb74d;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden;background:var(--bg)}
+  body{color:var(--ink);font-family:-apple-system,"Segoe UI","Segoe UI Variable Display",Roboto,Helvetica,sans-serif;
+    -webkit-font-smoothing:antialiased;font-size:13px;user-select:none}
+  .app{position:absolute;inset:0;display:flex;flex-direction:column}
+
+  .topbar{height:44px;flex:none;display:flex;align-items:center;gap:6px;padding:0 10px;background:var(--panel);border-bottom:1px solid var(--line)}
+  .sym{position:relative}
+  .sym input{width:150px;font:inherit;font-size:14px;font-weight:700;color:var(--ink);background:var(--panel2);border:1px solid var(--line);
+    border-radius:6px;padding:6px 10px;outline:none}
+  .sym input:focus{border-color:var(--accent)}
+  .sym .hint{position:absolute;left:0;top:34px;background:#2a2e39;color:var(--ink);font-size:11.5px;font-weight:600;padding:6px 10px;
+    border-radius:6px;white-space:nowrap;box-shadow:0 6px 16px rgba(0,0,0,.4);opacity:0;transition:opacity .2s;pointer-events:none;z-index:20}
+  .sym .hint.show{opacity:1}
+  .vsep{width:1px;height:22px;background:var(--line);margin:0 4px}
+  .tf{display:flex;gap:2px}
+  .tf button{font:inherit;font-size:12.5px;font-weight:700;color:var(--muted);background:none;border:0;border-radius:5px;padding:6px 9px;cursor:default}
+  .tf button.on{color:var(--ink);background:var(--accent-t)}
+  .tf button.off{opacity:.4;cursor:not-allowed}
+  .topbar .spacer{flex:1}
+  .iconbtn{width:30px;height:30px;border-radius:6px;border:0;background:none;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px}
+  .iconbtn:hover{background:var(--panel2);color:var(--ink)}
+  .navlink{font-size:12.5px;font-weight:700;color:var(--muted);text-decoration:none;padding:6px 10px;border-radius:6px;margin-right:4px}
+  .navlink:hover{color:var(--ink);background:var(--panel2)}
+  .aitag{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--fc);background:rgba(255,152,0,.12);padding:5px 10px;border-radius:5px}
+  .aitag i{width:6px;height:6px;border-radius:50%;background:var(--fc)}
+
+  .mid{flex:1;min-height:0;display:flex}
+  .chartwrap{position:relative;flex:1;min-width:0;display:flex;flex-direction:column}
+  .chartpane{position:relative;flex:1;min-height:0}
+  .chartpane svg{position:absolute;inset:0;width:100%;height:100%}
+  .legend{position:absolute;left:10px;top:8px;z-index:5;font-size:12.5px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;max-width:62%}
+  .legend .nm{font-weight:800;font-size:13.5px;color:var(--ink)}
+  .legend .tfx{color:var(--muted);font-weight:700}
+  .legend .ohlc span{color:var(--muted);margin-right:3px}
+  .legend .ohlc b{font-weight:700;color:var(--ink);margin-right:9px;font-variant-numeric:tabular-nums}
+  .legend .chg{font-weight:800;font-variant-numeric:tabular-nums}
+  .legend .chg.up{color:var(--up)} .legend .chg.dn{color:var(--down)}
+  .legend .fcl{color:var(--fc-ink);font-weight:800}
+  .headline{position:absolute;left:50%;bottom:calc(20% + 34px);transform:translateX(-50%);z-index:6;background:rgba(28,32,48,.92);border:1px solid var(--line);
+    border-radius:8px;padding:8px 16px;font-size:13.5px;font-weight:650;color:var(--ink);max-width:min(72%,58rem);text-align:center;line-height:1.4;
+    box-shadow:0 8px 24px rgba(0,0,0,.35)}
+  .headline em{font-style:normal;color:var(--fc-ink)} .headline b.g{color:var(--up)} .headline b.r{color:var(--down)}
+  .live{position:absolute;right:84px;bottom:14px;z-index:6;display:none;align-items:center;gap:6px;background:var(--accent);color:#fff;
+    font-size:12px;font-weight:700;padding:7px 12px;border-radius:20px;cursor:pointer;box-shadow:0 6px 16px rgba(0,0,0,.4)}
+  .live.show{display:flex}
+  .busy{position:absolute;inset:0;z-index:9;display:none;align-items:center;justify-content:center;background:rgba(19,23,34,.6)}
+  .busy.show{display:flex}
+  .busy>div{background:var(--panel);border:1px solid var(--fc);border-radius:10px;padding:14px 20px;font-size:13.5px;font-weight:650;
+    display:flex;gap:12px;align-items:center;max-width:32rem;line-height:1.45;box-shadow:0 10px 28px rgba(0,0,0,.45)}
+  .busy b{color:var(--fc-ink)}
+  .spin{flex:none;width:18px;height:18px;border:2px solid var(--line);border-top-color:var(--fc);border-radius:50%;animation:sp .8s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+
+  .dock{width:250px;flex:none;background:var(--panel);border-left:1px solid var(--line);overflow-y:auto;padding:10px}
+  .card{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px}
+  .card .k{font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+  .card .big{font-size:26px;font-weight:800;letter-spacing:-.03em;line-height:1.1;color:var(--fc-ink);font-variant-numeric:tabular-nums;margin:3px 0 2px}
+  .card .big small{font-size:13px;color:var(--muted);font-weight:700;letter-spacing:0;margin-left:3px}
+  .card .sub{font-size:11px;color:var(--muted);font-weight:600;line-height:1.4}
+  .card .sub b{color:var(--ink)}
+  .meter{height:5px;border-radius:3px;background:var(--line);margin:6px 0 4px;overflow:hidden}
+  .meter i{display:block;height:100%;background:var(--fc);width:0;transition:width .5s}
+  .dir{display:flex;justify-content:space-between;align-items:flex-end;margin-top:4px}
+  .dir .r{text-align:right}
+  .dir .lab{display:block;font-size:11px;font-weight:800;letter-spacing:.04em}
+  .dir .lab.up,.dir .big.up{color:var(--up)} .dir .lab.dn,.dir .big.dn{color:var(--down)}
+  .dir .big{margin:1px 0 0}
+  .split{display:flex;height:6px;border-radius:3px;overflow:hidden;margin:7px 0 6px;background:var(--line)}
+  .split i{display:block;height:100%;transition:width .5s}
+  .split .u{background:var(--up)} .split .d{background:var(--down)}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .row2 .card .big{font-size:16px}
+  .outcome{display:none}
+  .outcome.show{display:block}
+  .outcome .big.g{color:var(--up)} .outcome .big.r{color:var(--down)}
+  .legendcard .lg{font-size:11px;color:var(--ink);font-weight:600;line-height:1.9}
+  .legendcard i{display:inline-block;width:12px;height:8px;border-radius:2px;margin-right:7px;vertical-align:middle}
+  .howcard p{margin:6px 0 0;font-size:11.5px;font-weight:600;line-height:1.45;color:var(--ink)}
+  .howcard p b{color:var(--fc-ink)}
+
+  .tbtn{font:inherit;font-size:12.5px;font-weight:700;color:var(--muted);background:none;border:1px solid transparent;border-radius:5px;padding:5px 10px;cursor:pointer;white-space:nowrap}
+  .tbtn:hover{color:var(--ink);background:var(--panel2)}
+  .tbtn.on{color:var(--fc-ink);border-color:var(--fc);background:rgba(255,152,0,.1)}
+  .asof{font-size:12px;font-weight:700;color:var(--muted);margin-left:8px;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .asof b{color:var(--ink)}
+  .foot{flex:none;font-size:10.5px;color:#9a844e;background:#241f14;border-top:1px solid #3a3220;padding:5px 12px;line-height:1.4}
+
+  .xline,.yline{stroke:var(--muted);stroke-width:1;stroke-dasharray:3 3;pointer-events:none}
+  .xlab,.ylab{fill:#fff;font-size:11px;font-weight:700}
+  .xlabbg,.ylabbg{fill:#2a2e39}
+  button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+  @media(max-width:900px){.dock{display:none}.asof{display:none}}
+  @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="sym"><input id="symbol" value="CIPLA" list="syms" autocomplete="off" spellcheck="false" aria-label="Search a stock"><datalist id="syms"></datalist><div class="hint" id="symhint"></div></div>
+    <div class="vsep"></div>
+    <div class="tf"><button class="off" title="More timeframes are coming">5m</button><button class="on">1H</button><button class="off" title="More timeframes are coming">1D</button></div>
+    <div class="vsep"></div>
+    <button class="tbtn" id="runs">Show 30 runs</button>
+    <span class="asof" id="asof"></span>
+    <div class="spacer"></div>
+    <a class="navlink" id="settingsLink" href="/setup?keys" style="display:none">Settings</a>
+    <span class="aitag"><i></i>KRONOS AI FORECAST</span>
+    <button class="iconbtn" id="fsbtn" title="Full screen">&#9974;</button>
+  </div>
+  <div class="mid">
+    <div class="chartwrap">
+      <div class="chartpane" id="chartpane">
+        <svg id="chart"></svg>
+        <div class="legend" id="legend"></div>
+        <div class="headline" id="head"></div>
+        <div class="live" id="live">&#9679; Back to the forecast</div>
+        <div class="busy" id="busy"><div><span class="spin"></span><span id="busyt"></span></div></div>
+      </div>
+    </div>
+    <div class="dock">
+      <div class="card"><div class="k">Direction of the runs &middot; next <span class="pn">24</span> candles</div>
+        <div class="dir"><div><span class="lab up">&#9650; Up</span><span class="big up" id="upPct">–</span></div>
+          <div class="r"><span class="lab dn">Down &#9660;</span><span class="big dn" id="dnPct">–</span></div></div>
+        <div class="split"><i class="u" id="upbar"></i><i class="d" id="dnbar"></i></div>
+        <div class="sub" id="ups">–</div></div>
+      <div class="card"><div class="k">Volatility amplification</div>
+        <div class="big" id="va">–</div><div class="meter"><i id="vam"></i></div>
+        <div class="sub" id="vas">–</div></div>
+      <div class="row2">
+        <div class="card"><div class="k">Mean forecast</div><div class="big" id="mean">–</div><div class="sub" id="means">–</div></div>
+        <div class="card"><div class="k">Full range</div><div class="big" id="rng" style="font-size:13.5px">–</div><div class="sub" id="rngs">–</div></div>
+      </div>
+      <div class="card outcome" id="outcome"><div class="k">What really happened</div><div class="big" id="oc">–</div><div class="sub" id="ocs">–</div></div>
+      <div class="card legendcard">
+        <div class="lg"><i style="background:var(--up)"></i>past candles (up / <span style="color:var(--down)">down</span>)</div>
+        <div class="lg"><i style="background:var(--fc)"></i>mean forecast (average of the runs)</div>
+        <div class="lg"><i style="background:var(--fc-t)"></i>forecast range (lowest to highest run)</div>
+        <div class="lg"><i style="background:transparent;border-top:2px dashed var(--down);height:0;border-radius:0"></i>forecast starts here</div>
+      </div>
+      <div class="card howcard"><div class="k">How Kronos works</div>
+        <p>ChatGPT predicts the next word. <b>Kronos predicts the next candle.</b></p>
+        <p>It read the last <b class="hn">360</b> hourly candles (about 60 trading days), then drew the next <b class="pn">24</b>, one at a time, <b class="rn">30</b> times over. That's 30 possible futures.</p>
+        <p>The orange line is their average. The shaded band is the spread from the lowest run to the highest.</p>
+      </div>
+    </div>
+  </div>
+  <div class="foot" id="foot">Educational demo of a research AI model on past data. Not investment advice, not a recommendation. Probabilities are the model's own estimates from its runs, not a promise of what the stock will do. Past results do not guarantee future results.</div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const fP=n=>n.toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
+const fV=n=>n>=1e7?(n/1e7).toFixed(2)+" Cr":n>=1e5?(n/1e5).toFixed(2)+" L":n>=1e3?(n/1e3).toFixed(1)+" K":String(Math.round(n));
+const pct=n=>(n>=0?"+":"")+n.toFixed(2)+"%";
+const MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const dt=s=>{const [d,t]=s.split(" "),[y,m,dd]=d.split("-");return +dd+" "+MON[m-1]+(t?" "+t:"")};
+const dday=s=>{const [y,m,dd]=s.split(" ")[0].split("-");return +dd+" "+MON[m-1]+" "+y};
+const rm=matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+let D, C, fi=0, reveal=false, revealN=0, showRuns=false, grow=0, anim=null, busy=false, UNI=[], curY=null, easeQ=false;
+let view={count:94,end:0,manualY:null}, following=true, histCount=70;
+const F=()=>D.forecasts[fi], P=()=>D.settings.pred;
+
+// ---- what the camera may show: past candles up to the forecast's start, the forecast slots, and
+// (only after "Reveal") the real candles inside those slots. Nothing after the forecast window. ---
+function maxEnd(){return F().origin+P()-1}
+function clampView(){
+  const m=maxEnd();
+  view.count=Math.max(20,Math.min(m+1,view.count));
+  view.end=Math.max(view.count-1,Math.min(m,view.end));
+}
+function tsAt(k){const o=F().origin; if(k>=o&&k<o+P())return F().ts[k-o]; return C[k]?C[k][0]:null}
+function shown(k){const o=F().origin; return k<C.length&&(k<o||(reveal&&k<o+revealN))}
+
+function working(on,html){$("busy").classList.toggle("show",on); if(html)$("busyt").innerHTML=html}
+const getJSON=u=>fetch(u).then(r=>r.json().then(j=>{if(!r.ok)throw j; return j}));
+function load(sym){
+  if(busy)return Promise.reject({error:"busy"});
+  busy=true; working(true,`Kronos is reading the last 360 hourly candles of <b>${sym}</b> and drawing 30 possible futures&hellip; (about 5 seconds)`);
+  return getJSON("/kronos/forecast/data?symbol="+encodeURIComponent(sym)).then(j=>{
+    D=j; C=j.candles; fi=D.forecasts.length-1; $("symbol").value=D.symbol;
+    document.querySelectorAll(".pn").forEach(e=>e.textContent=D.settings.pred);
+    document.querySelectorAll(".hn").forEach(e=>e.textContent=D.settings.hist);
+    document.querySelectorAll(".rn").forEach(e=>e.textContent=D.settings.paths);
+    $("runs").textContent=`Show ${D.settings.paths} runs`;
+    $("foot").innerHTML=`Educational demo of a research AI model (Kronos, Tsinghua University, AAAI 2026) on past data. Not investment advice, not a recommendation, not a forecast you should trade on. Probabilities are the model's own estimates from ${D.settings.paths} runs, not a promise of what ${D.symbol} will do. Past results do not guarantee future results. Data: ${D.name}, 1-hour candles 9:15&ndash;15:15, ${dday(D.data_from)} to ${dt(D.data_to)}; source: ${D.source} (the last 15 minutes of each day are not in Dhan's intraday feed since Aug 2026, so they are left out on every day). Investments in securities markets are subject to market risks; read all related documents carefully before investing.`;
+    show(fi);
+  }).finally(()=>{busy=false; working(false)});
+}
+
+function select(n){
+  if(!D||busy)return;
+  n=Math.max(0,Math.min(D.forecasts.length-1,n));
+  if(D.forecasts[n]){show(n); return}
+  busy=true; working(true,`Kronos is drawing the forecast it would have made ${D.forecasts.length-1-n} trading day${D.forecasts.length-1-n>1?"s":""} earlier&hellip;`);
+  getJSON(`/kronos/forecast/one?symbol=${encodeURIComponent(D.symbol)}&k=${n}`).then(f=>{D.forecasts[n]=f; show(n)})
+    .catch(()=>{}).finally(()=>{busy=false; working(false)});
+}
+function show(n){
+  fi=n; curY=null;
+  reveal=false; revealN=0; following=true; view.manualY=null; view.count=histCount+P();
+  drawForecast();
+}
+function stopAnim(){if(anim){clearInterval(anim);anim=null}}
+function drawForecast(){ // grow the runs out one candle at a time, the way the model actually makes them
+  stopAnim(); grow=rm?P():0; draw();
+  if(rm)return;
+  anim=setInterval(()=>{grow++; draw(); if(grow>=P())stopAnim()},55);
+}
+function doReveal(){
+  const f=F(); if(!f.actual_n)return;
+  stopAnim(); grow=P();
+  if(reveal){reveal=false; revealN=0; draw(); return}
+  reveal=true; revealN=rm?Math.min(P(),f.actual_n):0; draw();
+  if(rm)return;
+  anim=setInterval(()=>{revealN++; draw(); if(revealN>=Math.min(P(),f.actual_n))stopAnim()},110);
+}
+
+// ---- right dock + headline ---------------------------------------------------------------------
+function outcome(){
+  const f=F(), n=Math.min(P(),f.actual_n,revealN); if(!reveal||!n)return null;
+  const act=C[f.origin+n-1][4], s=n-1, inside=act>=f.lo[s]&&act<=f.hi[s];
+  const went=act>f.last, called=f.up_prob>.5, tie=f.up_prob===.5;
+  let out=0; for(let j=0;j<n;j++){const c=C[f.origin+j][4]; if(c<f.lo[j]||c>f.hi[j])out++}
+  return {n,act,inside,went,called,tie,out,full:n>=Math.min(P(),f.actual_n)};
+}
+function dock(){
+  const f=F(), R=D.settings.paths, ups=Math.round(f.up_prob*R), va=Math.round(f.volamp_prob*R);
+  const upP=Math.round(f.up_prob*100);
+  $("upPct").textContent=upP+"%"; $("dnPct").textContent=(100-upP)+"%";
+  $("upbar").style.width=f.up_prob*100+"%"; $("dnbar").style.width=(100-f.up_prob*100)+"%";
+  $("ups").innerHTML=`<b>${ups} of ${R}</b> runs ended above the last close of ₹${fP(f.last)}; <b>${R-ups} of ${R}</b> ended at or below it.`;
+  $("va").textContent=Math.round(f.volamp_prob*100)+"%"; $("vam").style.width=f.volamp_prob*100+"%";
+  $("vas").innerHTML=`<b>${va} of ${R}</b> runs swing harder over the next ${P()} candles than the last ${P()} real ones did.`;
+  $("mean").textContent="₹"+fP(f.mean_end); $("means").textContent=pct((f.mean_end/f.last-1)*100)+" after "+P()+" candles";
+  $("rng").textContent="₹"+fP(f.min_end)+" – ₹"+fP(f.max_end); $("rngs").textContent="lowest to highest run, "+P()+" candles out";
+  const o=outcome(); $("outcome").classList.toggle("show",!!o);
+  if(o){
+    const ch=(o.act/f.last-1)*100;
+    $("oc").textContent="₹"+fP(o.act); $("oc").className="big "+(o.inside?"g":"r");
+    $("ocs").innerHTML=`${pct(ch)} after ${o.n} candle${o.n>1?"s":""} &middot; <b>${o.inside?"inside":"outside"}</b> the range. `+
+      `Candles that closed outside the range on the way: <b>${o.out} of ${o.n}</b>.`+
+      (o.full?` Kronos gave up ${Math.round(f.up_prob*100)}%; it went <b>${o.went?"up":"down"}</b>${o.tie?".":` &mdash; the call was <b>${o.went===o.called?"right":"wrong"}</b>.`}`:"");
+  }
+  $("asof").innerHTML=(f.latest?"<b>Latest</b> &middot; ":"")+"made after <b>"+dt(f.asof)+"</b>";
+}
+function headline(){
+  const f=F(), R=D.settings.paths, o=outcome();
+  if(o&&o.full){$("head").innerHTML=`${D.symbol} closed at <em>₹${fP(o.act)}</em> after ${o.n} candles, ${o.inside?`<b class="g">inside</b>`:`<b class="r">outside</b>`} the range Kronos drew. On the way, <b class="${o.out?"r":"g"}">${o.out} of ${o.n}</b> candles closed outside it.`; return}
+  if(reveal){$("head").innerHTML=`Revealing what ${D.symbol} really did, one candle at a time.`; return}
+  if(grow<P()){$("head").innerHTML=`Kronos is drawing the next ${P()} candles, one at a time, <em>${R} times over</em>.`; return}
+  $("head").innerHTML=`${R} possible futures for ${D.symbol}. <em>${Math.round(f.up_prob*R)} end higher</em> and <em>${R-Math.round(f.up_prob*R)} end lower</em> than ₹${fP(f.last)}; the full range runs from ₹${fP(f.min_end)} to ₹${fP(f.max_end)}.`;
+}
+function legendHTML(k){
+  const f=F(), o=f.origin;
+  if(k>=o&&k<o+P()&&!shown(k)){const s=k-o; if(s>=grow)return baseLegend();
+    return `<span class="nm">${D.symbol}</span><span class="tfx">&middot; 1H &middot; ${dt(f.ts[s])}</span>
+      <span class="fcl">FORECAST</span><span class="ohlc"><span>mean</span><b>${fP(f.mean[s][3])}</b><span>range</span><b>${fP(f.lo[s])} – ${fP(f.hi[s])}</b><span>vol</span><b>${fV(f.mean[s][4])}</b></span>`}
+  const c=C[k]; if(!c)return baseLegend();
+  const pc=C[k-1]?C[k-1][4]:c[1], chg=c[4]-pc, up=chg>=0;
+  return `<span class="nm">${D.symbol}</span><span class="tfx">&middot; 1H &middot; ${dt(c[0])}</span>
+    <span class="ohlc"><span>O</span><b>${fP(c[1])}</b><span>H</span><b>${fP(c[2])}</b><span>L</span><b>${fP(c[3])}</b><span>C</span><b>${fP(c[4])}</b><span>Vol</span><b>${fV(c[5])}</b></span>
+    <span class="chg ${up?"up":"dn"}">${up?"+":""}${fP(chg)} (${pct(chg/pc*100)})</span>`;
+}
+function baseLegend(){return legendHTML(F().origin-1)}
+
+// Where the price axis should be, given where it is now [a,b] and what must be visible [lo,hi].
+function stableY(a,b,lo,hi){
+  const h=b-a, need=hi-lo;
+  let nh=h;
+  if(need>h)nh=need*1.25;            // no longer fits: grow, with headroom so it rarely has to grow again
+  else if(need<h*.45)nh=need/.7;     // fills under half the height: shrink so it fills ~70%
+  let na=(a+b)/2-nh/2, nb=na+nh;
+  const room=nh*.08;                 // when it must move, leave a little room so it doesn't creep every tick
+  if(hi>nb){na+=hi-nb+room; nb=na+nh}
+  if(lo<na){nb-=na-lo+room; na=nb-nh}
+  return [na,nb];
+}
+
+// ---- chart ---------------------------------------------------------------------------------------
+function draw(){
+  if(!D||!F())return;
+  const f=F(), o=f.origin, np=P();
+  if(following)view.end=maxEnd();
+  clampView();
+  const pane=$("chartpane"), W=pane.clientWidth, H=pane.clientHeight; if(!W||!H)return;
+  const svg=d3.select("#chart"); svg.attr("viewBox",`0 0 ${W} ${H}`); svg.selectAll("*").remove();
+  const M={l:10,r:74,t:10,b:26}, volH=Math.round((H-M.t-M.b)*.2), gap=16;
+  const pB=H-M.b-volH-gap, vT=H-M.b-volH, vB=H-M.b;
+  const rightPad=Math.max(2,view.count*.08);
+  const lo0=view.end-view.count+1, x=d3.scaleLinear().domain([lo0,view.end+rightPad]).range([M.l,W-M.r]);
+  const a=Math.max(0,Math.floor(lo0)), b=Math.ceil(view.end);
+  const vis=[]; for(let k=a;k<=b;k++)if(shown(k))vis.push(k);
+  const steps=[]; for(let s=0;s<grow;s++){const k=o+s; if(k>=a-1&&k<=b+1)steps.push(s)}
+  const fanSteps=[]; for(let s=0;s<np;s++){const k=o+s; if(k>=a-1&&k<=b+1)fanSteps.push(s)}
+
+  let lo=Infinity,hi=-Infinity;
+  vis.forEach(k=>{lo=Math.min(lo,C[k][3]);hi=Math.max(hi,C[k][2])});
+  fanSteps.forEach(s=>{lo=Math.min(lo,f.lo[s]);hi=Math.max(hi,f.hi[s])});
+  if(!isFinite(lo)){lo=f.last*.99;hi=f.last*1.01}
+  let yLo,yHi;
+  if(view.manualY){yLo=view.manualY.c-view.manualY.h; yHi=view.manualY.c+view.manualY.h; curY=null}
+  else{
+    // A steady camera: the axis holds still while everything fits, and only glides (never jumps)
+    // when a revealed real candle leaves the view. Re-fitting on every frame made it look like it
+    // was resetting itself while the forecast drew or the real candles were revealed.
+    const pad=(hi-lo)*.08||1, t0=[lo-pad,hi+pad];
+    if(!curY)curY=t0;
+    else{const t=stableY(curY[0],curY[1],t0[0],t0[1]); curY=[curY[0]+(t[0]-curY[0])*.25, curY[1]+(t[1]-curY[1])*.25];
+      if(!easeQ&&Math.abs(t[0]-curY[0])+Math.abs(t[1]-curY[1])>(t[1]-t[0])*.002){easeQ=true; requestAnimationFrame(()=>{easeQ=false; draw()})}}
+    yLo=curY[0]; yHi=curY[1];
+  }
+  const y=d3.scaleLinear().domain([yLo,yHi]).range([pB,M.t]);
+  let vmax=0; vis.forEach(k=>vmax=Math.max(vmax,C[k][5])); fanSteps.forEach(s=>vmax=Math.max(vmax,f.mean[s][4]));
+  const yv=d3.scaleLinear().domain([0,(vmax||1)*1.1]).range([vB,vT]);
+  window.__xy={x,y,yv,M,W,H,pB,vT,vB};
+  const bw=Math.max(1.5,x(1)-x(0)-2), cx=k=>x(k+.5);
+
+  const defs=svg.append("defs");
+  defs.append("clipPath").attr("id","cp").append("rect").attr("x",M.l).attr("y",M.t).attr("width",W-M.r-M.l).attr("height",pB-M.t);
+  defs.append("clipPath").attr("id","cv").append("rect").attr("x",M.l).attr("y",vT).attr("width",W-M.r-M.l).attr("height",vB-vT);
+  const g=svg.append("g");
+
+  // grid + right price axis, then the volume pane's own small axis
+  y.ticks(6).forEach(v=>{g.append("line").attr("x1",M.l).attr("x2",W-M.r).attr("y1",y(v)).attr("y2",y(v)).attr("stroke","var(--grid)");
+    g.append("text").attr("x",W-M.r+10).attr("y",y(v)+4).attr("font-size",11).attr("font-weight",600).attr("fill","#787b86").text(y.tickFormat(6)(v))});
+  g.append("line").attr("x1",M.l).attr("x2",W).attr("y1",vT-gap/2).attr("y2",vT-gap/2).attr("stroke","var(--line)");
+  yv.ticks(2).filter(v=>v>0).forEach(v=>g.append("text").attr("x",W-M.r+10).attr("y",yv(v)+4).attr("font-size",10.5).attr("font-weight",600).attr("fill","#5d606b").text(fV(v)));
+  g.append("text").attr("x",M.l+2).attr("y",vT+12).attr("font-size",10.5).attr("font-weight",700).attr("fill","#5d606b").text("Volume");
+
+  // time axis: ~7 labels, with the hour once zoomed in to a few days
+  const idxs=d3.range(a,b+1).filter(k=>tsAt(k)), step=Math.max(1,Math.round(idxs.length/7));
+  const days=new Set(idxs.map(k=>tsAt(k).slice(0,10))).size;
+  idxs.forEach((k,j)=>{if(j%step)return; const t=tsAt(k);
+    g.append("text").attr("x",cx(k)).attr("y",H-8).attr("text-anchor","middle").attr("font-size",10.5).attr("font-weight",600)
+      .attr("fill",k>=o?"#b98a4a":"#787b86").text(days<=5?dt(t):dt(t.slice(0,10)))});
+
+  // the forecast zone and its start line
+  const zx0=x(o), zx1=x(o+np);
+  g.append("rect").attr("x",zx0).attr("y",M.t).attr("width",Math.max(0,zx1-zx0)).attr("height",vB-M.t).attr("fill","var(--fc-zone)");
+  g.append("line").attr("x1",zx0).attr("x2",zx0).attr("y1",M.t).attr("y2",vB).attr("stroke","var(--down)").attr("stroke-width",1.4).attr("stroke-dasharray","6 4");
+  if(zx0>M.l+40&&zx0<W-M.r-10)g.append("text").attr("x",zx0+8).attr("y",M.t+14).attr("font-size",11).attr("font-weight",800).attr("fill","var(--fc)")
+    .attr("letter-spacing",".06em").text(`FORECAST · NEXT ${np} CANDLES`);
+
+  const pg=g.append("g").attr("clip-path","url(#cp)"), vg=g.append("g").attr("clip-path","url(#cv)");
+  // the fan: min-max range of all runs, the individual runs (optional), the mean path
+  if(grow>0){
+    const pts=[{k:o-.5,lo:f.last,hi:f.last}].concat(d3.range(grow).map(s=>({k:o+s+.5,lo:f.lo[s],hi:f.hi[s]})));
+    pg.append("path").attr("d",d3.area().x(p=>x(p.k)).y0(p=>y(p.lo)).y1(p=>y(p.hi))(pts)).attr("fill","var(--fc-t)");
+    const line=d3.line().x(p=>x(p[0])).y(p=>y(p[1]));
+    if(showRuns)f.paths.forEach(r=>pg.append("path").attr("d",line([[o-.5,f.last]].concat(d3.range(grow).map(s=>[o+s+.5,r[s]]))))
+      .attr("fill","none").attr("stroke","var(--fc)").attr("stroke-width",1).attr("opacity",.28));
+    pg.append("path").attr("d",line([[o-.5,f.last]].concat(d3.range(grow).map(s=>[o+s+.5,f.mean[s][3]]))))
+      .attr("fill","none").attr("stroke","var(--fc)").attr("stroke-width",2.2);
+    if(grow===np){const e=cx(o+np-1)+bw/2;
+      if(e>M.l+120&&e<W-M.r+2)[[f.hi[np-1],"highest run",-7],[f.lo[np-1],"lowest run",15]].forEach(([v,t,dy])=>{
+        if(v>=yLo&&v<=yHi)pg.append("text").attr("x",e).attr("y",y(v)+dy).attr("text-anchor","end")
+          .attr("font-size",10.5).attr("font-weight",700).attr("fill","var(--fc-ink)").text(t+" "+fP(v))})}
+  }
+  // candles (past, plus the real ones after "Reveal")
+  vis.forEach(k=>{const c=C[k], up=c[4]>=c[1], col=up?"var(--up)":"var(--down)";
+    pg.append("line").attr("x1",cx(k)).attr("x2",cx(k)).attr("y1",y(c[2])).attr("y2",y(c[3])).attr("stroke",col).attr("stroke-width",1.4);
+    pg.append("rect").attr("x",cx(k)-bw/2).attr("width",bw).attr("y",y(Math.max(c[1],c[4]))).attr("height",Math.max(1,Math.abs(y(c[1])-y(c[4])))).attr("fill",col);
+    vg.append("rect").attr("x",cx(k)-bw/2).attr("width",bw).attr("y",yv(c[5])).attr("height",vB-yv(c[5])).attr("fill",col).attr("opacity",.45);
+  });
+  // forecast volume: filled orange bars; once the real candle is revealed, an orange outline over its real bar
+  steps.forEach(s=>{const k=o+s, v=f.mean[s][4], real=shown(k);
+    vg.append("rect").attr("x",cx(k)-bw/2).attr("width",bw).attr("y",yv(v)).attr("height",vB-yv(v))
+      .attr("fill",real?"none":"var(--fc)").attr("opacity",real?1:.6).attr("stroke",real?"var(--fc)":"none").attr("stroke-width",1.5)});
+
+  // price-axis tags: the last real close, and the mean forecast at the end
+  const tag=(v,fill,ink)=>{if(v<yLo||v>yHi)return; g.append("rect").attr("x",W-M.r+2).attr("y",y(v)-9).attr("width",M.r-4).attr("height",18).attr("rx",3).attr("fill",fill);
+    g.append("text").attr("x",W-M.r+8).attr("y",y(v)+4).attr("font-size",11).attr("font-weight",800).attr("fill",ink).text(fP(v))};
+  tag(f.last,"#363a45","#fff");
+  if(grow===np)tag(f.mean[np-1][3],"var(--fc)","#131722");
+  window.__crossg=svg.append("g");
+
+  dock(); headline(); $("legend").innerHTML=baseLegend();
+  $("live").classList.toggle("show",!following);
+}
+
+// ---- crosshair ----------------------------------------------------------------------------------
+function crosshair(mx,my){
+  const cg=window.__crossg; if(!cg||!window.__xy)return; cg.selectAll("*").remove();
+  const {x,y,yv,M,W,H,pB,vT,vB}=window.__xy;
+  if(mx<M.l||mx>W-M.r||my<M.t||my>vB)return;
+  cg.append("line").attr("class","yline").attr("x1",mx).attr("x2",mx).attr("y1",M.t).attr("y2",vB);
+  if(my<=pB||my>=vT){
+    cg.append("line").attr("class","xline").attr("x1",M.l).attr("x2",W-M.r).attr("y1",my).attr("y2",my);
+    cg.append("rect").attr("class","ylabbg").attr("x",W-M.r+2).attr("y",my-9).attr("width",M.r-4).attr("height",18).attr("rx",3);
+    cg.append("text").attr("class","ylab").attr("x",W-M.r+8).attr("y",my+4).text(my<=pB?fP(y.invert(my)):fV(Math.max(0,yv.invert(my))));
+  }
+  const k=Math.floor(x.invert(mx)), t=tsAt(k);
+  if(t){const lbl=dt(t), tw=lbl.length*6.4+14;
+    cg.append("rect").attr("class","xlabbg").attr("x",mx-tw/2).attr("y",H-M.b+3).attr("width",tw).attr("height",17).attr("rx",3);
+    cg.append("text").attr("class","xlab").attr("x",mx-tw/2+7).attr("y",H-M.b+15).text(lbl);
+    $("legend").innerHTML=(shown(k)||k>=F().origin)?legendHTML(k):baseLegend();
+  }
+}
+
+// ---- navigation: same as the GARCH replay - wheel zoom, drag pans time and price, drag or wheel on
+// the price axis rescales it, double-click resets ----------------------------------------------------
+const pane=()=>$("chartpane");
+let drag=null;
+function onDown(e){
+  const r=pane().getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top; if(!window.__xy)return;
+  const {W,M,y,pB}=window.__xy, yd=y.domain();
+  drag={x0:mx,y0:my,moved:false,onAxis:mx>W-M.r,view0:{...view},yd:[yd[0],yd[1]],ph:pB-M.t};
+  try{pane().setPointerCapture(e.pointerId)}catch(err){}
+}
+function onMove(e){
+  const r=pane().getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
+  if(!drag){crosshair(mx,my); return}
+  const dx=mx-drag.x0, dy=my-drag.y0;
+  if(Math.abs(dx)>3||Math.abs(dy)>3)drag.moved=true;
+  if(!drag.moved)return;
+  const {x}=window.__xy, [a0,b0]=drag.yd, c0=(a0+b0)/2, h0=(b0-a0)/2;
+  if(drag.onAxis){view.manualY={c:c0,h:h0*Math.exp(dy/160)}}
+  else{view.end=drag.view0.end-dx/(x(1)-x(0)); view.manualY={c:c0+dy*(b0-a0)/drag.ph,h:h0}}
+  following=false; clampView(); draw(); crosshair(mx,my);
+}
+function onUp(){drag=null}
+function onWheel(e){
+  e.preventDefault(); if(!window.__xy)return;
+  const r=pane().getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
+  const {x,y,W,M}=window.__xy, factor=e.deltaY>0?1.12:1/1.12;
+  if(mx>W-M.r){const d=y.domain(); view.manualY={c:(d[0]+d[1])/2,h:(d[1]-d[0])/2*factor}}
+  else{const under=x.invert(mx), frac=(mx-M.l)/(x.range()[1]-M.l); view.count*=factor; view.end=under-frac*view.count+view.count-1}
+  following=false; clampView(); draw(); crosshair(mx,my);
+}
+function resetView(){following=true; view.manualY=null; curY=null; view.count=histCount+P(); draw()}
+pane().addEventListener("pointerdown",onDown); pane().addEventListener("pointermove",onMove);
+addEventListener("pointerup",onUp); pane().addEventListener("wheel",onWheel,{passive:false});
+pane().addEventListener("dblclick",resetView);
+pane().addEventListener("pointerleave",()=>{if(!drag&&window.__crossg){window.__crossg.selectAll("*").remove(); if(D)$("legend").innerHTML=baseLegend()}});
+addEventListener("resize",draw);
+$("live").onclick=resetView;
+
+function replayForecast(){reveal=false; revealN=0; drawForecast()}
+$("runs").onclick=()=>{showRuns=!showRuns; $("runs").classList.toggle("on",showRuns); draw()};
+$("fsbtn").onclick=()=>{document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen()};
+// ---- symbol search: Nifty 50, Sensex and every NSE F&O stock; type a symbol or a company name ----
+function resolve(v){
+  const q=v.trim().toUpperCase().replace(/\s+/g," "); if(!q)return null;
+  if(["NIFTY","NIFTY50","NIFTY 50"].includes(q))return "NIFTY 50";
+  const hit=UNI.find(u=>u.symbol===q)||UNI.find(u=>u.name.toUpperCase()===q)||UNI.find(u=>u.name.toUpperCase().startsWith(q))||UNI.find(u=>u.symbol.startsWith(q));
+  return hit?hit.symbol:null;
+}
+function tryLoad(v){
+  const sym=resolve(v), h=$("symhint"), inp=$("symbol");
+  const fail=msg=>{h.textContent=msg; h.classList.add("show"); clearTimeout(h._t); h._t=setTimeout(()=>h.classList.remove("show"),2600); inp.value=D?D.symbol:""};
+  if(!sym)return fail(`"${v}" isn't in the list: Nifty 50, Sensex and NSE F&O stocks.`);
+  if(D&&sym===D.symbol){inp.value=sym; inp.blur(); return}
+  inp.blur(); load(sym).catch(err=>{if(err&&err.error!=="busy")fail(err.error||"Couldn't load that one.")});
+}
+$("symbol").addEventListener("keydown",e=>{if(e.key==="Enter")tryLoad(e.target.value)});
+$("symbol").addEventListener("change",e=>{if(UNI.some(u=>u.symbol===e.target.value))tryLoad(e.target.value)});
+$("symbol").addEventListener("focus",e=>e.target.select());
+getJSON("/kronos/universe").then(u=>{UNI=u; $("syms").innerHTML=u.map(x=>`<option value="${x.symbol}">${x.name}</option>`).join("")});
+addEventListener("keydown",e=>{
+  if(e.target.tagName==="INPUT"||!D)return;
+  if(e.key===" "){e.preventDefault(); if(!e.repeat)replayForecast()}
+  else if(e.key==="ArrowLeft"){e.preventDefault(); select(fi-1)}
+  else if(e.key==="ArrowRight"){e.preventDefault(); select(fi+1)}
+  else if(e.key==="r"||e.key==="R")doReveal();
+  else if(e.key==="f"||e.key==="F")$("fsbtn").click();
+});
+
+// Inside the desktop app (it answers /api/state): send first-time users to setup, show Settings.
+fetch("/api/state").then(r=>r.ok?r.json():null).then(s=>{if(!s)return; if(!s.ready){location.replace("/setup");return} $("settingsLink").style.display=""}).catch(()=>{});
+load((new URLSearchParams(location.search).get("symbol")||"CIPLA").toUpperCase()).catch(err=>{$("head").textContent=(err&&err.error)||"Couldn't load the forecast."});
+</script>
+</body>
+</html>

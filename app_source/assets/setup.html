@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kronos Forecast · Setup</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root{--bg:#131722;--panel:#1c2030;--panel2:#20242f;--line:#2a2e39;--ink:#d1d4dc;--muted:#787b86;--faint:#4a4e5a;
+    --up:#26a69a;--down:#ef5350;--accent:#2962ff;--fc:#ff9800;--fc-ink:#ffb74d}
+  *{box-sizing:border-box}
+  html,body{margin:0;min-height:100%;background:var(--bg)}
+  body{color:var(--ink);font-family:-apple-system,"Segoe UI","Segoe UI Variable Display",Roboto,Helvetica,sans-serif;-webkit-font-smoothing:antialiased;
+    display:flex;justify-content:center;padding:48px 16px}
+  .wrap{width:100%;max-width:680px}
+  .brand{display:flex;align-items:center;gap:10px;font-size:13px;font-weight:800;letter-spacing:.08em;color:var(--fc)}
+  .brand i{width:8px;height:8px;border-radius:50%;background:var(--fc)}
+  h1{font-size:28px;font-weight:800;letter-spacing:-.02em;margin:10px 0 6px;text-wrap:balance}
+  .lead{color:var(--muted);font-size:14px;line-height:1.55;margin:0 0 22px}
+  .steps{display:flex;gap:8px;margin-bottom:22px}
+  .steps div{flex:1;font-size:11.5px;font-weight:800;letter-spacing:.05em;color:var(--faint);border-top:3px solid var(--line);padding-top:8px}
+  .steps div.on{color:var(--ink);border-color:var(--accent)} .steps div.done{color:var(--up);border-color:var(--up)}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px 22px;display:none}
+  .panel.on{display:block}
+  .agree{white-space:pre-wrap;font-size:13px;line-height:1.6;color:var(--ink);max-height:46vh;overflow:auto;background:var(--panel2);
+    border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin:0 0 16px}
+  label{display:block;font-size:11.5px;font-weight:800;letter-spacing:.06em;color:var(--muted);margin:14px 0 6px}
+  input{width:100%;font:inherit;font-size:14px;color:var(--ink);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px 12px;outline:none}
+  input:focus{border-color:var(--accent)}
+  .note{font-size:12.5px;color:var(--muted);line-height:1.5;margin-top:12px}
+  .row{display:flex;gap:10px;align-items:center;margin-top:18px;flex-wrap:wrap}
+  button,.btn{font:inherit;font-size:14px;font-weight:750;padding:10px 18px;border-radius:8px;border:1px solid var(--accent);background:var(--accent);
+    color:#fff;cursor:pointer;text-decoration:none;display:inline-block}
+  button.ghost,.btn.ghost{background:none;border-color:var(--line);color:var(--ink)}
+  button:disabled{opacity:.5;cursor:wait}
+  button:focus-visible,input:focus-visible,.btn:focus-visible{outline:2px solid var(--fc-ink);outline-offset:2px}
+  .msg{font-size:13px;font-weight:650;margin-top:12px;min-height:1.2em}
+  .msg.bad{color:#ff8a80} .msg.good{color:var(--up)}
+  .bar{height:8px;border-radius:4px;background:var(--line);overflow:hidden;margin:16px 0 8px}
+  .bar i{display:block;height:100%;width:0;background:var(--fc);transition:width .4s}
+  .mb{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .foot{margin-top:22px;font-size:11px;color:#9a844e;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand"><i></i>KRONOS AI FORECAST</div>
+  <h1 id="title">Set up Kronos Forecast</h1>
+  <p class="lead">Three quick steps, once. After that the app opens straight to the chart.</p>
+  <div class="steps"><div id="s1">1 · AGREEMENT</div><div id="s2">2 · YOUR DHAN KEYS</div><div id="s3">3 · THE AI MODEL</div></div>
+
+  <div class="panel" id="p1">
+    <div class="agree" id="agreement">Loading&hellip;</div>
+    <div class="row"><button id="agreeBtn">I agree</button></div>
+  </div>
+
+  <div class="panel" id="p2">
+    <label for="cid">DHAN CLIENT ID</label>
+    <input id="cid" autocomplete="off" spellcheck="false">
+    <label for="tok">DHAN ACCESS TOKEN</label>
+    <input id="tok" type="password" autocomplete="off" spellcheck="false" placeholder="Paste it from Dhan's web app: Profile → DhanHQ Trading APIs">
+    <p class="note">Stored only on this computer and sent only to Dhan (api.dhan.co), to fetch one-hour candles. This software never places an order. Dhan access tokens expire; paste a fresh one here whenever Dhan asks.</p>
+    <div class="row"><button id="keysBtn">Check with Dhan and save</button><a class="btn ghost" id="toChart" href="/" style="display:none">Back to the chart</a></div>
+    <div class="msg" id="keysMsg"></div>
+  </div>
+
+  <div class="panel" id="p3">
+    <p class="note" style="margin-top:0;font-size:14px;color:var(--ink)">Kronos-base, the AI model itself, is downloaded once from its authors' official release on Hugging Face (about 407 MB). Every file is checked against the official release before it's used.</p>
+    <div class="bar"><i id="mbar"></i></div>
+    <div class="mb" id="mtext">Not downloaded yet.</div>
+    <div class="row"><button id="dlBtn">Download the model</button></div>
+    <div class="msg" id="dlMsg"></div>
+  </div>
+
+  <div class="foot">Educational tool. Not investment advice, not a recommendation. The model's up/down split is only the share of its own runs that ended higher or lower. Past results do not guarantee future results. Investments in securities markets are subject to market risks; read all related documents carefully before investing.</div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const post=(u,b)=>fetch(u,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b||{})}).then(r=>r.json().then(j=>{if(!r.ok)throw j;return j}));
+const editing=new URLSearchParams(location.search).has("keys");
+let polling=null;
+
+function show(st){
+  const step=!st.agreed?1:(!st.has_keys||(editing&&st.ready))?2:st.model.status!=="ready"?3:0;
+  if(step===0){location.replace("/");return}
+  ["s1","s2","s3"].forEach((id,i)=>{$(id).className=i+1<step?"done":i+1===step?"on":""});
+  ["p1","p2","p3"].forEach((id,i)=>$(id).classList.toggle("on",i+1===step));
+  $("agreement").textContent=st.agreement;
+  if(step===2){ if(!$("cid").value)$("cid").value=st.client_id||""; $("toChart").style.display=st.ready?"":"none";
+    $("title").textContent=st.ready?"Update your Dhan keys":"Set up Kronos Forecast"}
+  const m=st.model, mb=n=>(n/1048576).toFixed(0)+" MB";
+  $("mbar").style.width=(m.total?m.done/m.total*100:0)+"%";
+  $("mtext").textContent=m.status==="downloading"?`Downloading… ${mb(m.done)} of ${mb(m.total)}`:m.status==="ready"?"Downloaded and checked.":"Not downloaded yet.";
+  $("dlBtn").disabled=m.status==="downloading";
+  $("dlMsg").className="msg"+(m.status==="error"?" bad":""); $("dlMsg").textContent=m.status==="error"?m.error+" Try again.":"";
+  if(m.status==="downloading"&&!polling)polling=setInterval(refresh,800);
+  if(m.status!=="downloading"&&polling){clearInterval(polling);polling=null}
+}
+function refresh(){return fetch("/api/state").then(r=>r.json()).then(show)}
+
+$("agreeBtn").onclick=()=>post("/api/agree").then(refresh);
+$("keysBtn").onclick=()=>{
+  const b=$("keysBtn"); b.disabled=true; $("keysMsg").className="msg"; $("keysMsg").textContent="Checking with Dhan…";
+  post("/api/keys",{client_id:$("cid").value,token:$("tok").value})
+    .then(()=>{$("keysMsg").className="msg good"; $("keysMsg").textContent="Dhan accepted the keys. Saved."; $("tok").value="";
+      setTimeout(()=>{if(editing)location.replace("/"); else refresh()},700)})
+    .catch(e=>{$("keysMsg").className="msg bad"; $("keysMsg").textContent=(e&&e.error)||"Something went wrong."})
+    .finally(()=>b.disabled=false);
+};
+$("dlBtn").onclick=()=>post("/api/model/download").then(()=>{setTimeout(refresh,300)}).catch(e=>{$("dlMsg").className="msg bad";$("dlMsg").textContent=(e&&e.error)||"Couldn't start the download."});
+refresh();
+</script>
+</body>
+</html>

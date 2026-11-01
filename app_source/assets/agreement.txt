@@ -1,0 +1,21 @@
+KRONOS FORECAST - USER AGREEMENT
+
+Please read this before you use the software.
+
+1. What this is. This is an educational tool. It runs Kronos, a published research AI model (Tsinghua University, accepted at AAAI 2026, released by its authors under the MIT licence), on one-hour candles from your own Dhan account. For the stock or index you choose, it reads the last 360 one-hour candles and draws 30 possible paths for the next 24 candles. It shows their average, the range from the lowest to the highest path, and how many paths ended higher or lower. It does not know news or events.
+
+2. What the numbers mean. The "up" and "down" percentages are only the share of the model's own 30 paths that ended higher or lower. They are the model's estimate, not a prediction you should rely on. In the author's own tests, the model's up/down calls were close to a coin flip, and the real price often moved outside the range it drew.
+
+3. Not advice. Nothing shown by this software is investment advice, a research report, a tip, or a recommendation to buy, sell or hold any security, contract or product. The software is not a substitute for your own judgement or for advice from a SEBI-registered investment adviser or research analyst.
+
+4. Your decisions. Every trading decision you take, and every order you place, is yours alone. Trading in securities and derivatives carries substantial risk, including the loss of the full amount invested. Past data and past model performance do not indicate future results.
+
+5. No warranty. The software is provided "as is", without warranty of any kind, express or implied, including accuracy, completeness, fitness for a particular purpose or uninterrupted operation. Data comes from a third party (Dhan) and may be wrong, late or missing. The Kronos model is third-party research software, downloaded from its authors' official release on Hugging Face.
+
+6. No liability. To the fullest extent permitted by law, the author and distributor of this software accept no liability for any loss, damage, cost or expense of any kind arising from the use of, or reliance on, this software or its output.
+
+7. Your keys. Your Dhan client id and access token are stored only on this computer and are sent only to Dhan's own API to fetch price data. This software never places an order.
+
+8. Regulation. This software is not registered with, approved by, or endorsed by SEBI, any exchange, or any broker. It is educational material and is intended to be consistent with SEBI's regulations on investment advice and research analysis.
+
+By clicking "I agree" you confirm that you have read and understood this agreement and accept it in full.
