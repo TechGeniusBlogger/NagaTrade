@@ -1,0 +1,5 @@
+.git
+software/
+code/
+*.docx
+app_source/.venv
